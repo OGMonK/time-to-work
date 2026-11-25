@@ -1,0 +1,182 @@
+{
+  "name": "time-to-work",
+  "displayName": "Time to Work",
+  "description": "Opens a doomscroll window (YouTube Shorts, TikTok, Webtoon...) while Claude Code is working, then closes it and tells you it's time to work.",
+  "version": "0.1.0",
+  "publisher": "ogmonk",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#FF8A65",
+    "theme": "light"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OGMonK/time-to-work.git"
+  },
+  "homepage": "https://github.com/OGMonK/time-to-work#readme",
+  "bugs": {
+    "url": "https://github.com/OGMonK/time-to-work/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude code",
+    "break",
+    "tiktok",
+    "youtube shorts",
+    "fun"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "timeToWork.openSettings",
+        "title": "Time to Work: Settings"
+      },
+      {
+        "command": "timeToWork.installHooks",
+        "title": "Time to Work: Install Claude Code Hooks"
+      },
+      {
+        "command": "timeToWork.uninstallHooks",
+        "title": "Time to Work: Uninstall Claude Code Hooks"
+      },
+      {
+        "command": "timeToWork.pickSite",
+        "title": "Time to Work: Pick Scroll Site"
+      },
+      {
+        "command": "timeToWork.test",
+        "title": "Time to Work: Test (simulate Claude working 15s)"
+      },
+      {
+        "command": "timeToWork.backToWork",
+        "title": "Time to Work: Close Scroll Window Now"
+      },
+      {
+        "command": "timeToWork.toggle",
+        "title": "Time to Work: Enable/Disable"
+      }
+    ],
+    "configuration": {
+      "title": "Time to Work",
+      "properties": {
+        "timeToWork.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the scroll window while Claude Code is working."
+        },
+        "timeToWork.returnToClaude": {
+          "type": "boolean",
+          "default": true,
+          "description": "When Claude finishes, bring VS Code to the front and focus the Claude Code input."
+        },
+        "timeToWork.mode": {
+          "type": "string",
+          "enum": [
+            "popup",
+            "panel"
+          ],
+          "enumDescriptions": [
+            "Small phone-sized Chrome/Edge app window. Works with YouTube, TikTok, Webtoon.",
+            "Panel inside VS Code. Only works with sites that allow embedding (e.g. youtube.com/embed/...)."
+          ],
+          "default": "popup",
+          "description": "Where to show the scroll site."
+        },
+        "timeToWork.sites": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "loginUrl": {
+                "type": "string",
+                "description": "Page to open for logging in. Empty = use url."
+              }
+            },
+            "required": [
+              "name",
+              "url"
+            ]
+          },
+          "default": [
+            {
+              "name": "YouTube Shorts",
+              "url": "https://www.youtube.com/shorts"
+            },
+            {
+              "name": "TikTok",
+              "url": "https://www.tiktok.com/foryou",
+              "loginUrl": "https://www.tiktok.com/login"
+            },
+            {
+              "name": "Webtoon",
+              "url": "https://www.webtoons.com/en/"
+            }
+          ],
+          "description": "Sites you can scroll. Pick one with the status bar item."
+        },
+        "timeToWork.showDelaySeconds": {
+          "type": "number",
+          "default": 5,
+          "description": "Only open the window if Claude is still working after this many seconds (skips quick answers)."
+        },
+        "timeToWork.maxMinutes": {
+          "type": "number",
+          "default": 30,
+          "description": "Safety net: close the window after this many minutes even if no stop signal arrives (e.g. you pressed Esc)."
+        },
+        "timeToWork.port": {
+          "type": "number",
+          "default": 47821,
+          "description": "Local port the Claude Code hooks call. Re-run 'Install Claude Code Hooks' after changing."
+        },
+        "timeToWork.browserPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a Chromium browser (Chrome/Edge/Brave). Empty = auto-detect."
+        },
+        "timeToWork.popupWidth": {
+          "type": "number",
+          "default": 420
+        },
+        "timeToWork.popupHeight": {
+          "type": "number",
+          "default": 820
+        },
+        "timeToWork.notificationMessage": {
+          "type": "string",
+          "default": "⏰ Time to work! Claude udah selesai.",
+          "description": "Message shown when Claude finishes."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.4.0"
+  }
+}
