@@ -2,7 +2,7 @@
   "name": "time-to-work",
   "displayName": "Time to Work",
   "description": "Opens a doomscroll window (YouTube Shorts, TikTok, Webtoon...) while Claude Code is working, then closes it and tells you it's time to work.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "ogmonk",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -79,6 +79,37 @@
           "type": "boolean",
           "default": true,
           "description": "When Claude finishes, bring VS Code to the front and focus the Claude Code input."
+        },
+        "timeToWork.reopenAfterApproval": {
+          "type": "boolean",
+          "default": true,
+          "description": "When Claude asks for permission the window closes; reopen it once you approve and Claude continues."
+        },
+        "timeToWork.schedule": {
+          "type": "object",
+          "default": {
+            "enabled": false,
+            "mode": "only",
+            "days": [1, 2, 3, 4, 5],
+            "from": "17:00",
+            "to": "23:59"
+          },
+          "properties": {
+            "enabled": { "type": "boolean", "description": "Use the schedule. Off = always active." },
+            "mode": {
+              "type": "string",
+              "enum": ["only", "except"],
+              "enumDescriptions": ["Only active during this time", "Active except during this time"]
+            },
+            "days": {
+              "type": "array",
+              "items": { "type": "number", "minimum": 0, "maximum": 6 },
+              "description": "0 = Sunday … 6 = Saturday"
+            },
+            "from": { "type": "string", "pattern": "^\\d{1,2}:\\d{2}$", "description": "HH:MM" },
+            "to": { "type": "string", "pattern": "^\\d{1,2}:\\d{2}$", "description": "HH:MM (may be earlier than 'from' to cross midnight)" }
+          },
+          "description": "When the scroll window is allowed to appear."
         },
         "timeToWork.mode": {
           "type": "string",

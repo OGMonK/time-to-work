@@ -32,6 +32,7 @@ let panel: vscode.WebviewPanel | undefined;
 let settingsPanel: vscode.WebviewPanel | undefined;
 let startedAt: number | undefined;
 let shown = false;
+let paused = false;
 
 const cfg = () => vscode.workspace.getConfiguration('timeToWork');
 const profileDir = () => path.join(ctx.globalStorageUri.fsPath, 'browser-profile');
@@ -76,6 +77,10 @@ export function activate(context: vscode.ExtensionContext) {
     { dispose: () => { stopServer(); closeDistraction(); } }
   );
 
+  // Refresh the status bar every minute so schedule changes show up.
+  const tick = setInterval(updateStatus, 60_000);
+  context.subscriptions.push({ dispose: () => clearInterval(tick) });
+
   startServer();
 }
 
@@ -103,7 +108,9 @@ function startServer() {
       } else if (url.startsWith('/ttw/stop')) {
         onStop('done');
       } else if (url.startsWith('/ttw/attention')) {
-        onStop('attention');
+        onAttention();
+      } else if (url.startsWith('/ttw/resume')) {
+        onResume();
       }
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end('ok');
@@ -135,12 +142,13 @@ function stopServer() {
 // ---------------------------------------------------------------- state machine
 
 function onStart(force = false) {
-  if (!force && !cfg().get<boolean>('enabled', true)) {
+  if (!force && (!cfg().get<boolean>('enabled', true) || !scheduleActive())) {
     return;
   }
   if (startedAt === undefined) {
     startedAt = Date.now();
   }
+  paused = false;
   clearTimers();
   if (!shown) {
     const delay = Math.max(0, cfg().get<number>('showDelaySeconds', 5)) * 1000;
@@ -156,6 +164,7 @@ function onStop(reason: StopReason) {
   const wasShown = shown;
   const elapsed = startedAt ? Date.now() - startedAt : 0;
   startedAt = undefined;
+  paused = false;
   closeDistraction();
   updateStatus();
 
@@ -179,6 +188,77 @@ function onStop(reason: StopReason) {
     case 'manual':
       break;
   }
+}
+
+/** Claude is waiting for a permission answer: close the window but keep tracking the task. */
+function onAttention() {
+  if (startedAt === undefined) {
+    return;
+  }
+  if (showTimer) { clearTimeout(showTimer); showTimer = undefined; }
+  const wasShown = shown;
+  closeDistraction();
+  paused = true;
+  updateStatus();
+  if (!wasShown) {
+    return;
+  }
+  if (cfg().get<boolean>('returnToClaude', true)) {
+    bringBackToClaude();
+  }
+  const reopen = cfg().get<boolean>('reopenAfterApproval', true);
+  vscode.window.showWarningMessage(
+    `⏰ Claude butuh approval kamu.${reopen ? ' Window scroll dibuka lagi setelah kamu approve.' : ''}`
+  );
+}
+
+/** A tool finished after the permission prompt: Claude is working again. */
+function onResume() {
+  if (!paused || startedAt === undefined) {
+    return;
+  }
+  paused = false;
+  if (
+    cfg().get<boolean>('reopenAfterApproval', true) &&
+    cfg().get<boolean>('enabled', true) &&
+    scheduleActive() &&
+    !shown &&
+    !showTimer
+  ) {
+    const delay = Math.max(0, cfg().get<number>('showDelaySeconds', 5)) * 1000;
+    showTimer = setTimeout(openDistraction, delay);
+  }
+  updateStatus();
+}
+
+// ---------------------------------------------------------------- schedule
+
+interface Schedule {
+  enabled: boolean;
+  mode: 'only' | 'except';
+  days: number[];
+  from: string;
+  to: string;
+}
+
+function toMinutes(hhmm: string | undefined, fallback: number): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm ?? '');
+  return m ? Number(m[1]) * 60 + Number(m[2]) : fallback;
+}
+
+/** True when the schedule allows the scroll window right now (always true if no schedule). */
+function scheduleActive(now = new Date()): boolean {
+  const s = cfg().get<Schedule>('schedule');
+  if (!s?.enabled) {
+    return true;
+  }
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const from = toMinutes(s.from, 0);
+  const to = toMinutes(s.to, 24 * 60);
+  // from > to means the range crosses midnight, e.g. 22:00 → 02:00
+  const inTime = from <= to ? mins >= from && mins < to : mins >= from || mins < to;
+  const inWindow = (s.days ?? []).includes(now.getDay()) && inTime;
+  return s.mode === 'except' ? !inWindow : inWindow;
 }
 
 function clearTimers() {
@@ -430,6 +510,8 @@ function pushSettingsState() {
       config: {
         enabled: c.get('enabled'),
         returnToClaude: c.get('returnToClaude'),
+        reopenAfterApproval: c.get('reopenAfterApproval'),
+        schedule: c.get('schedule'),
         mode: c.get('mode'),
         showDelaySeconds: c.get('showDelaySeconds'),
         maxMinutes: c.get('maxMinutes'),
@@ -442,7 +524,8 @@ function pushSettingsState() {
       sites: c.get<Site[]>('sites', []),
       active: ctx.globalState.get<string>('site') ?? null,
       logins: ctx.globalState.get<Record<string, number>>('logins', {}),
-      hooksInstalled: hooksInstalled(),
+      hooksStatus: hooksStatus(),
+      scheduleActiveNow: scheduleActive(),
       serverPort: serverPort ?? null,
       serverNote: serverNote ?? null,
       browser: findBrowser(c.get<string>('browserPath', '')) ?? null,
@@ -474,8 +557,12 @@ function updateStatus() {
     statusItem.text = '$(device-mobile) TTW: off';
   } else if (shown) {
     statusItem.text = '$(device-mobile) Scroll time…';
+  } else if (paused) {
+    statusItem.text = '$(bell) Claude nunggu approval';
   } else if (startedAt !== undefined) {
     statusItem.text = '$(sync~spin) Claude kerja…';
+  } else if (!scheduleActive()) {
+    statusItem.text = '$(device-mobile) TTW: 💤 di luar jadwal';
   } else {
     statusItem.text = `$(device-mobile) TTW: ${activeName() ?? '-'}`;
   }
@@ -520,9 +607,15 @@ function readClaudeSettings(quiet = false): Json | undefined {
   }
 }
 
-function hooksInstalled(): boolean {
+/** 'ok' = current hooks, 'outdated' = installed by an older version, 'none' = not installed. */
+function hooksStatus(): 'ok' | 'outdated' | 'none' {
   const s = readClaudeSettings(true);
-  return !!s && JSON.stringify(s.hooks ?? {}).includes(HOOK_TAG);
+  const text = JSON.stringify(s?.hooks ?? {});
+  if (!text.includes(HOOK_TAG)) {
+    return 'none';
+  }
+  const port = cfg().get<number>('port', 47821);
+  return text.includes(`${HOOK_TAG}resume`) && text.includes(`:${port}${HOOK_TAG}`) ? 'ok' : 'outdated';
 }
 
 function stripOurHooks(settings: Json) {
@@ -589,6 +682,7 @@ async function installHooks(confirm: boolean) {
   add('UserPromptSubmit', 'start');
   add('Stop', 'stop');
   add('Notification', 'attention', 'permission_prompt');
+  add('PostToolUse', 'resume');
   writeClaudeSettings(settings);
   vscode.window.showInformationMessage(
     'Hooks terpasang. Mulai sesi Claude Code baru (atau reload window) supaya hooks dibaca.'

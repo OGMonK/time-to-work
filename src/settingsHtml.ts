@@ -68,6 +68,20 @@ export function settingsHtml(nonce: string, cspSource: string): string {
   .site .actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
   .muted { color: var(--vscode-descriptionForeground); }
   .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  input[type=time] {
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, transparent);
+    padding: 4px 6px; border-radius: 4px; font: inherit;
+    color-scheme: light dark;
+  }
+  .days { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .day {
+    display: inline-flex; align-items: center; gap: 4px;
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,.3));
+    border-radius: 14px; padding: 3px 10px; cursor: pointer;
+  }
+  .day:has(input:checked) { border-color: var(--vscode-focusBorder); background: rgba(128,128,128,.12); }
   .steps { margin: 0; padding-left: 18px; }
   .steps li { margin: 4px 0; }
 </style>
@@ -113,6 +127,10 @@ export function settingsHtml(nonce: string, cspSource: string): string {
       <label class="switch"><input type="checkbox" data-key="returnToClaude"> Fokus ke VS Code + input Claude saat selesai</label>
     </div>
     <div class="row">
+      <label class="k">Saat Claude minta approval</label>
+      <label class="switch"><input type="checkbox" data-key="reopenAfterApproval"> Tutup dulu, buka lagi setelah kamu approve</label>
+    </div>
+    <div class="row">
       <label class="k">Tampilkan di</label>
       <select data-key="mode">
         <option value="popup">Window kecil (Chrome/Edge) — semua site</option>
@@ -134,7 +152,48 @@ export function settingsHtml(nonce: string, cspSource: string): string {
   </section>
 
   <section>
-    <h2>4 · Window</h2>
+    <h2>4 · Jadwal</h2>
+    <p class="hint">Atur kapan window scroll boleh muncul. Di luar jadwal, extension diam saja.</p>
+    <div class="row">
+      <label class="switch"><input type="checkbox" id="schEnabled"> Pakai jadwal</label>
+      <span id="schStatus"></span>
+    </div>
+    <div id="schBody">
+      <div class="row">
+        <label class="k">Mode</label>
+        <select id="schMode">
+          <option value="only">Hanya aktif di waktu ini</option>
+          <option value="except">Mati di waktu ini (misal jam kerja / meeting)</option>
+        </select>
+      </div>
+      <div class="row">
+        <label class="k">Hari</label>
+        <span class="days">
+          <label class="day"><input type="checkbox" value="1">Sen</label>
+          <label class="day"><input type="checkbox" value="2">Sel</label>
+          <label class="day"><input type="checkbox" value="3">Rab</label>
+          <label class="day"><input type="checkbox" value="4">Kam</label>
+          <label class="day"><input type="checkbox" value="5">Jum</label>
+          <label class="day"><input type="checkbox" value="6">Sab</label>
+          <label class="day"><input type="checkbox" value="0">Min</label>
+        </span>
+      </div>
+      <div class="row">
+        <label class="k">Jam</label>
+        <input type="time" id="schFrom"> sampai <input type="time" id="schTo">
+        <span class="muted">boleh lewat tengah malam, misal 22:00 → 02:00</span>
+      </div>
+      <div class="row">
+        <label class="k">Preset</label>
+        <button class="secondary" data-preset="afterwork">🌙 Setelah jam kerja</button>
+        <button class="secondary" data-preset="officeoff">💼 Mati di jam kantor</button>
+        <button class="secondary" data-preset="weekend">🏖️ Weekend saja</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>5 · Window</h2>
     <div class="row">
       <label class="k">Ukuran</label>
       <input type="number" min="200" data-key="popupWidth"> × <input type="number" min="200" data-key="popupHeight"> <span class="muted">px</span>
@@ -182,6 +241,33 @@ export function settingsHtml(nonce: string, cspSource: string): string {
 
   function saveSites() { send('sites', { sites: state.sites }); }
 
+  // ---- schedule: one object setting
+  function saveSchedule() {
+    const days = [...document.querySelectorAll('.day input')].filter((cb) => cb.checked).map((cb) => Number(cb.value));
+    const value = {
+      enabled: $('schEnabled').checked,
+      mode: $('schMode').value,
+      days,
+      from: $('schFrom').value || '09:00',
+      to: $('schTo').value || '17:00',
+    };
+    state.config.schedule = value;
+    send('set', { key: 'schedule', value });
+  }
+  ['schEnabled', 'schMode', 'schFrom', 'schTo'].forEach((id) => $(id).addEventListener('change', saveSchedule));
+  document.querySelectorAll('.day input').forEach((cb) => cb.addEventListener('change', saveSchedule));
+  document.querySelectorAll('[data-preset]').forEach((btn) => btn.addEventListener('click', () => {
+    const p = btn.dataset.preset;
+    const set = (mode, days, from, to) => {
+      $('schEnabled').checked = true; $('schMode').value = mode; $('schFrom').value = from; $('schTo').value = to;
+      document.querySelectorAll('.day input').forEach((cb) => { cb.checked = days.includes(Number(cb.value)); });
+    };
+    if (p === 'afterwork') set('only', [1, 2, 3, 4, 5], '17:00', '23:59');
+    if (p === 'officeoff') set('except', [1, 2, 3, 4, 5], '09:00', '17:00');
+    if (p === 'weekend') set('only', [0, 6], '00:00', '23:59');
+    saveSchedule();
+  }));
+
   function fmtDate(ts) {
     const d = new Date(ts);
     return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
@@ -196,9 +282,26 @@ export function settingsHtml(nonce: string, cspSource: string): string {
       else el.value = v ?? '';
     });
 
-    $('hookStatus').innerHTML = state.hooksInstalled
-      ? '<span class="pill ok">✓ Hooks terpasang</span>'
-      : '<span class="pill warn">Hooks belum terpasang</span>';
+    $('hookStatus').innerHTML = {
+      ok: '<span class="pill ok">✓ Hooks terpasang</span>',
+      outdated: '<span class="pill warn">Hooks versi lama — klik Install hooks lagi</span>',
+      none: '<span class="pill warn">Hooks belum terpasang</span>',
+    }[state.hooksStatus];
+
+    const s = c.schedule || {};
+    $('schEnabled').checked = !!s.enabled;
+    $('schMode').value = s.mode || 'only';
+    $('schFrom').value = s.from || '09:00';
+    $('schTo').value = s.to || '17:00';
+    document.querySelectorAll('.day input').forEach((cb) => {
+      cb.checked = (s.days || []).includes(Number(cb.value));
+    });
+    $('schBody').style.opacity = s.enabled ? '1' : '.45';
+    $('schStatus').innerHTML = !s.enabled
+      ? '<span class="pill ok">Selalu aktif</span>'
+      : state.scheduleActiveNow
+        ? '<span class="pill ok">Sekarang: aktif</span>'
+        : '<span class="pill warn">Sekarang: 💤 di luar jadwal</span>';
     $('serverStatus').innerHTML = state.serverPort
       ? '<span class="pill ok">Listening 127.0.0.1:' + state.serverPort + '</span>'
       : '<span class="pill warn">' + (state.serverNote || 'Server tidak jalan') + '</span>';

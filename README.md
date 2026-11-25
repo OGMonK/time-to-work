@@ -29,7 +29,7 @@ Hook "UserPromptSubmit" ──► extension: "Claude mulai kerja"
 Hook "Stop" ──► window ditutup ──► 🔔 "Time to work!" ──► fokus balik ke input Claude Code
 ```
 
-Kalau Claude minta **approval** di tengah jalan, window juga langsung ditutup supaya Claude tidak nunggu kamu.
+Kalau Claude minta **approval** di tengah jalan, window ditutup dulu supaya Claude tidak nunggu kamu. Setelah kamu approve dan Claude lanjut kerja, window scroll **dibuka lagi** (hook `PostToolUse`).
 
 ## Fitur
 
@@ -37,6 +37,8 @@ Kalau Claude minta **approval** di tengah jalan, window juga langsung ditutup su
 - 🔑 **Login sekali, langsung masuk**: login ke YouTube/TikTok/site apa pun dari panel setting. Login tersimpan di profil browser khusus extension ini.
 - 🌐 **Site custom**: tambah site apa saja (Instagram Reels, Reddit, X, manga, dll.), atau pakai mode 🎲 **Random**.
 - 🎯 **Balik ke Claude**: begitu selesai, VS Code dibawa ke depan dan kursor langsung ada di input Claude Code.
+- ✋ **Pause saat approval**: window ditutup waktu Claude minta izin, lalu dibuka lagi setelah kamu approve.
+- 🗓️ **Jadwal**: pilih hari dan jam. Mode "hanya aktif di jam ini" (misalnya setelah jam kerja) atau "mati di jam ini" (misalnya jam kantor atau meeting). Ada preset 🌙 / 💼 / 🏖️.
 - ⚡ **Tidak ganggu jawaban cepat**: window hanya muncul kalau Claude masih kerja setelah N detik (default 5).
 - 🛑 **Batas aman**: window tertutup sendiri setelah 30 menit, untuk jaga-jaga kalau kamu menekan Esc di Claude.
 - ⚙️ **Panel setting visual**: semua diatur dari UI, tidak perlu edit JSON.
@@ -64,7 +66,7 @@ Buka halaman [**Releases**](https://github.com/OGMonK/time-to-work/releases/late
 **Cara B, lewat terminal:**
 
 ```bash
-code --install-extension time-to-work-0.1.0.vsix
+code --install-extension time-to-work-0.2.0.vsix
 ```
 
 Pakai Cursor? Ganti `code` dengan `cursor`.
@@ -74,7 +76,7 @@ Lalu **reload window**: `Ctrl+Shift+P` → `Developer: Reload Window`.
 ## Setup (sekitar 3 menit)
 
 1. Klik **`📱 TTW: ...`** di status bar kanan bawah. Panel **Time to Work** akan terbuka.
-2. **Install hooks**: klik tombol **Install hooks**. Ini menambahkan 3 hooks ke `~/.claude/settings.json`. File lama di-backup ke `settings.json.ttw-backup`.
+2. **Install hooks**: klik tombol **Install hooks**. Ini menambahkan 4 hooks ke `~/.claude/settings.json`. File lama di-backup ke `settings.json.ttw-backup`.
 3. **Login ke site**: klik **🔑 Login** di tiap site, login seperti biasa, lalu **tutup window-nya**. Statusnya akan berubah jadi `✓ login`.
 4. **Test**: klik **▶ Test 15 detik**. Window scroll muncul sekitar 5 detik, lalu tertutup di detik ke-15 dengan notifikasi.
 5. Mulai **sesi Claude Code baru**, kirim prompt, lalu selamat scroll 🎉
@@ -87,6 +89,8 @@ Semua bisa diatur dari panel (klik status bar `TTW`), atau lewat `Settings` deng
 |---|---|---|
 | Aktif | ✅ | Matikan sementara tanpa uninstall |
 | Balik ke Claude Code | ✅ | Bawa VS Code ke depan + fokus ke input Claude saat selesai |
+| Saat Claude minta approval | ✅ | Tutup dulu, buka lagi setelah kamu approve |
+| Jadwal | mati | Hari + jam, mode "hanya aktif" atau "mati di waktu ini". Bisa lewat tengah malam (22:00 → 02:00) |
 | Tampilkan di | Window kecil | `popup` (Chrome/Edge) atau `panel` di dalam VS Code (hanya URL embed) |
 | Tunggu sebelum buka | 5 detik | Jawaban cepat tidak membuka window |
 | Batas maksimum | 30 menit | Window ditutup paksa setelah ini |
@@ -120,7 +124,7 @@ Tambah site sendiri dengan **+ Tambah site** di panel: isi nama, Feed URL, dan (
 
 Biar transparan:
 
-- **`~/.claude/settings.json`**: ditambah 3 hooks (`UserPromptSubmit`, `Stop`, `Notification`) yang memanggil `curl` ke `http://127.0.0.1:47821`. Hanya dilakukan setelah kamu klik **Install hooks**, dan file lama di-backup dulu. **Uninstall hooks** menghapus hanya hooks milik extension ini.
+- **`~/.claude/settings.json`**: ditambah 4 hooks (`UserPromptSubmit`, `Stop`, `Notification`, `PostToolUse`) yang memanggil `curl` ke `http://127.0.0.1:47821`. Hanya dilakukan setelah kamu klik **Install hooks**, dan file lama di-backup dulu. **Uninstall hooks** menghapus hanya hooks milik extension ini.
 - **Server lokal** di `127.0.0.1:47821`. Hanya menerima koneksi dari komputermu sendiri, dan hanya menerima sinyal start/stop.
 - **Profil browser terpisah** di folder storage VS Code. Login site disimpan di sini, terpisah dari browser utamamu.
 
@@ -133,6 +137,10 @@ Extension ini tidak mengirim data ke mana pun.
 - **Windows kadang tidak mengizinkan app lain membawa window ke depan**, jadi ikon VS Code di taskbar hanya berkedip. Notifikasi tetap muncul.
 - Kalau window **login** masih terbuka saat Claude selesai, window itu ikut ditutup. Selesaikan login dulu.
 - Kalau beberapa window VS Code terbuka, hanya satu yang memegang port. Window scroll tetap jalan normal.
+
+## Update dari versi lama
+
+Setelah install versi baru, buka panel Time to Work. Kalau muncul **"Hooks versi lama"**, klik **Install hooks** sekali lagi, lalu mulai sesi Claude Code baru.
 
 ## Uninstall
 
