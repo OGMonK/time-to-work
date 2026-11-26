@@ -1,7 +1,14 @@
-/** HTML for the Time to Work settings panel. All state comes in via postMessage. */
-export function settingsHtml(nonce: string, cspSource: string): string {
+import { Lang, Strings } from './i18n';
+
+/** HTML for the Time to Work settings panel. Static text comes from `t`; state comes in via postMessage. */
+export function settingsHtml(nonce: string, cspSource: string, t: Strings, lang: Lang): string {
+  const days = [1, 2, 3, 4, 5, 6, 0]
+    .map((d) => `<label class="day"><input type="checkbox" value="${d}">${t.p_dayNames[d]}</label>`)
+    .join('\n          ');
+  // JSON for the script; escape "<" so a string can never close the <script> tag.
+  const T = JSON.stringify(t).replace(/</g, '\\u003c');
   return /* html */ `<!DOCTYPE html>
-<html lang="id">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
@@ -18,6 +25,8 @@ export function settingsHtml(nonce: string, cspSource: string): string {
     padding: 20px 28px 48px;
     max-width: 860px;
   }
+  header { display: flex; align-items: flex-start; gap: 16px; }
+  header .grow { flex: 1; }
   h1 { font-size: 1.6em; margin: 0 0 4px; }
   .sub { color: var(--vscode-descriptionForeground); margin: 0 0 20px; }
   section {
@@ -30,7 +39,8 @@ export function settingsHtml(nonce: string, cspSource: string): string {
   .hint { color: var(--vscode-descriptionForeground); font-size: .92em; margin: 0 0 12px; }
   .row { display: flex; align-items: center; gap: var(--gap); margin: 10px 0; flex-wrap: wrap; }
   .row label.k { width: 210px; flex: none; }
-  input[type=text], input[type=number], select {
+  .row.top { align-items: flex-start; }
+  input[type=text], input[type=number], input[type=time], select, textarea {
     background: var(--vscode-input-background);
     color: var(--vscode-input-foreground);
     border: 1px solid var(--vscode-input-border, transparent);
@@ -38,9 +48,11 @@ export function settingsHtml(nonce: string, cspSource: string): string {
     border-radius: 4px;
     font: inherit;
   }
+  input[type=time] { color-scheme: light dark; }
   input[type=text] { flex: 1; min-width: 160px; }
   input[type=number] { width: 80px; }
-  input:focus, select:focus { outline: 1px solid var(--vscode-focusBorder); }
+  textarea { flex: 1; min-width: 260px; min-height: 90px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: 1px solid var(--vscode-focusBorder); }
   button {
     background: var(--vscode-button-background);
     color: var(--vscode-button-foreground);
@@ -68,13 +80,6 @@ export function settingsHtml(nonce: string, cspSource: string): string {
   .site .actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
   .muted { color: var(--vscode-descriptionForeground); }
   .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
-  input[type=time] {
-    background: var(--vscode-input-background);
-    color: var(--vscode-input-foreground);
-    border: 1px solid var(--vscode-input-border, transparent);
-    padding: 4px 6px; border-radius: 4px; font: inherit;
-    color-scheme: light dark;
-  }
   .days { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .day {
     display: inline-flex; align-items: center; gap: 4px;
@@ -82,138 +87,173 @@ export function settingsHtml(nonce: string, cspSource: string): string {
     border-radius: 14px; padding: 3px 10px; cursor: pointer;
   }
   .day:has(input:checked) { border-color: var(--vscode-focusBorder); background: rgba(128,128,128,.12); }
-  .steps { margin: 0; padding-left: 18px; }
-  .steps li { margin: 4px 0; }
+  .preview {
+    margin-top: 8px; padding: 8px 12px; border-radius: 6px;
+    background: rgba(128,128,128,.12); display: none;
+  }
 </style>
 </head>
 <body>
-  <h1>⏰ Time to Work</h1>
-  <p class="sub">Scroll dulu selama Claude Code kerja. Begitu selesai, window ditutup dan kamu balik ke Claude.</p>
+  <header>
+    <div class="grow">
+      <h1>⏰ Time to Work</h1>
+      <p class="sub">${t.p_sub}</p>
+    </div>
+    <label class="switch">🌐 ${t.p_lang}
+      <select data-key="language">
+        <option value="auto">Auto</option>
+        <option value="id">Bahasa Indonesia</option>
+        <option value="en">English</option>
+      </select>
+    </label>
+  </header>
 
   <section>
-    <h2>1 · Hubungkan ke Claude Code</h2>
-    <p class="hint">Sekali saja. Menambah hooks ke <code>~/.claude/settings.json</code> (backup otomatis).</p>
+    <h2>${t.p_s1}</h2>
+    <p class="hint">${t.p_s1hint}</p>
     <div class="row">
       <span id="hookStatus"></span>
       <span id="serverStatus"></span>
     </div>
     <div class="row">
-      <button id="installHooks">Install hooks</button>
-      <button id="uninstallHooks" class="secondary">Uninstall hooks</button>
-      <button id="test" class="secondary">▶ Test 15 detik</button>
+      <button id="installHooks">${t.p_install}</button>
+      <button id="uninstallHooks" class="secondary">${t.p_uninstall}</button>
+      <button id="test" class="secondary">${t.p_test}</button>
     </div>
   </section>
 
   <section>
-    <h2>2 · Login ke site</h2>
-    <p class="hint">Klik <b>Login</b>, masuk ke akunmu di window yang terbuka, lalu tutup window-nya. Login tersimpan, jadi saat Claude kerja feed-nya langsung terbuka.</p>
+    <h2>${t.p_s2}</h2>
+    <p class="hint">${t.p_s2hint}</p>
     <div class="row">
-      <label class="switch"><input type="radio" name="active" value="🎲 Random" id="randomRadio"> 🎲 Random tiap kali</label>
+      <label class="switch"><input type="radio" name="active" id="randomRadio"> ${t.p_random}</label>
     </div>
     <div id="sites"></div>
     <div class="row">
-      <button id="addSite" class="secondary">+ Tambah site</button>
+      <button id="addSite" class="secondary">${t.p_addSite}</button>
     </div>
   </section>
 
   <section>
-    <h2>3 · Perilaku</h2>
+    <h2>${t.p_s3}</h2>
     <div class="row">
-      <label class="k">Aktif</label>
-      <label class="switch"><input type="checkbox" data-key="enabled"> Buka window saat Claude kerja</label>
+      <label class="k">${t.p_enabled}</label>
+      <label class="switch"><input type="checkbox" data-key="enabled"> ${t.p_enabledDesc}</label>
     </div>
     <div class="row">
-      <label class="k">Balik ke Claude Code</label>
-      <label class="switch"><input type="checkbox" data-key="returnToClaude"> Fokus ke VS Code + input Claude saat selesai</label>
+      <label class="k">${t.p_return}</label>
+      <label class="switch"><input type="checkbox" data-key="returnToClaude"> ${t.p_returnDesc}</label>
     </div>
     <div class="row">
-      <label class="k">Saat Claude minta approval</label>
-      <label class="switch"><input type="checkbox" data-key="reopenAfterApproval"> Tutup dulu, buka lagi setelah kamu approve</label>
+      <label class="k">${t.p_reopen}</label>
+      <label class="switch"><input type="checkbox" data-key="reopenAfterApproval"> ${t.p_reopenDesc}</label>
     </div>
     <div class="row">
-      <label class="k">Tampilkan di</label>
+      <label class="k">${t.p_mode}</label>
       <select data-key="mode">
-        <option value="popup">Window kecil (Chrome/Edge) — semua site</option>
-        <option value="panel">Panel VS Code — hanya URL embed</option>
+        <option value="popup">${t.p_modePopup}</option>
+        <option value="panel">${t.p_modePanel}</option>
       </select>
     </div>
     <div class="row">
-      <label class="k">Tunggu sebelum buka</label>
-      <input type="number" min="0" data-key="showDelaySeconds"> <span class="muted">detik (jawaban cepat tidak membuka window)</span>
+      <label class="k">${t.p_delay}</label>
+      <input type="number" min="0" data-key="showDelaySeconds"> <span class="muted">${t.p_delayUnit}</span>
     </div>
     <div class="row">
-      <label class="k">Batas maksimum</label>
-      <input type="number" min="1" data-key="maxMinutes"> <span class="muted">menit (kalau kamu tekan Esc di Claude)</span>
-    </div>
-    <div class="row">
-      <label class="k">Teks notifikasi</label>
-      <input type="text" data-key="notificationMessage">
+      <label class="k">${t.p_max}</label>
+      <input type="number" min="1" data-key="maxMinutes"> <span class="muted">${t.p_maxUnit}</span>
     </div>
   </section>
 
   <section>
-    <h2>4 · Jadwal</h2>
-    <p class="hint">Atur kapan window scroll boleh muncul. Di luar jadwal, extension diam saja.</p>
+    <h2>${t.p_s4}</h2>
     <div class="row">
-      <label class="switch"><input type="checkbox" id="schEnabled"> Pakai jadwal</label>
+      <label class="k">${t.p_msgMode}</label>
+      <select data-key="messageStyle">
+        <option value="savage">${t.p_msgSavage}</option>
+        <option value="simple">${t.p_msgSimple}</option>
+        <option value="custom">${t.p_msgCustom}</option>
+      </select>
+      <button id="tryMsg" class="secondary">${t.p_tryMsg}</button>
+    </div>
+    <div class="row top">
+      <label class="k">${t.p_custom}</label>
+      <textarea id="customMessages" placeholder="Claude done in {time}. Your move."></textarea>
+    </div>
+    <div class="row"><label class="k"></label><span class="muted">${t.p_customHint}</span></div>
+    <div class="row"><label class="k"></label><div class="preview" id="preview"></div></div>
+    <div class="row">
+      <label class="k">${t.p_sound}</label>
+      <label class="switch"><input type="checkbox" data-key="sound"> ${t.p_soundDesc}</label>
+      <button id="trySound" class="secondary">${t.p_trySound}</button>
+    </div>
+    <div class="row">
+      <label class="k">${t.p_soundFile}</label>
+      <input type="text" data-key="soundFile" placeholder="${t.p_soundFilePh}">
+    </div>
+  </section>
+
+  <section>
+    <h2>${t.p_s5}</h2>
+    <p class="hint">${t.p_s5hint}</p>
+    <div class="row">
+      <label class="switch"><input type="checkbox" id="schEnabled"> ${t.p_useSchedule}</label>
       <span id="schStatus"></span>
     </div>
     <div id="schBody">
       <div class="row">
-        <label class="k">Mode</label>
+        <label class="k">${t.p_schMode}</label>
         <select id="schMode">
-          <option value="only">Hanya aktif di waktu ini</option>
-          <option value="except">Mati di waktu ini (misal jam kerja / meeting)</option>
+          <option value="only">${t.p_schOnly}</option>
+          <option value="except">${t.p_schExcept}</option>
         </select>
       </div>
       <div class="row">
-        <label class="k">Hari</label>
+        <label class="k">${t.p_days}</label>
         <span class="days">
-          <label class="day"><input type="checkbox" value="1">Sen</label>
-          <label class="day"><input type="checkbox" value="2">Sel</label>
-          <label class="day"><input type="checkbox" value="3">Rab</label>
-          <label class="day"><input type="checkbox" value="4">Kam</label>
-          <label class="day"><input type="checkbox" value="5">Jum</label>
-          <label class="day"><input type="checkbox" value="6">Sab</label>
-          <label class="day"><input type="checkbox" value="0">Min</label>
+          ${days}
         </span>
       </div>
       <div class="row">
-        <label class="k">Jam</label>
-        <input type="time" id="schFrom"> sampai <input type="time" id="schTo">
-        <span class="muted">boleh lewat tengah malam, misal 22:00 → 02:00</span>
+        <label class="k">${t.p_hours}</label>
+        <input type="time" id="schFrom"> ${t.p_to} <input type="time" id="schTo">
+        <span class="muted">${t.p_midnight}</span>
       </div>
       <div class="row">
-        <label class="k">Preset</label>
-        <button class="secondary" data-preset="afterwork">🌙 Setelah jam kerja</button>
-        <button class="secondary" data-preset="officeoff">💼 Mati di jam kantor</button>
-        <button class="secondary" data-preset="weekend">🏖️ Weekend saja</button>
+        <label class="k">${t.p_preset}</label>
+        <button class="secondary" data-preset="afterwork">${t.p_presetAfter}</button>
+        <button class="secondary" data-preset="officeoff">${t.p_presetOffice}</button>
+        <button class="secondary" data-preset="weekend">${t.p_presetWeekend}</button>
       </div>
     </div>
   </section>
 
   <section>
-    <h2>5 · Window</h2>
+    <h2>${t.p_s6}</h2>
     <div class="row">
-      <label class="k">Ukuran</label>
+      <label class="k">${t.p_size}</label>
       <input type="number" min="200" data-key="popupWidth"> × <input type="number" min="200" data-key="popupHeight"> <span class="muted">px</span>
     </div>
     <div class="row">
-      <label class="k">Browser</label>
-      <input type="text" data-key="browserPath" placeholder="otomatis">
+      <label class="k">${t.p_browser}</label>
+      <input type="text" data-key="browserPath" placeholder="${t.p_auto}">
     </div>
     <div class="row"><label class="k"></label><span class="muted" id="browserDetected"></span></div>
     <div class="row">
-      <label class="k">Port hook</label>
-      <input type="number" data-key="port"> <span class="muted">install ulang hooks setelah ganti</span>
+      <label class="k">${t.p_port}</label>
+      <input type="number" data-key="port"> <span class="muted">${t.p_portHint}</span>
     </div>
   </section>
 
 <script nonce="${nonce}">
+  const T = ${T};
+  const RANDOM = '🎲 Random';
   const vscode = acquireVsCodeApi();
   let state = null;
   const $ = (id) => document.getElementById(id);
   const send = (type, extra = {}) => vscode.postMessage({ type, ...extra });
+  const fill = (s, v) => s.replace(/\\{(\\w+)\\}/g, (m, k) => (k in v ? v[k] : m));
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   // ---- general settings: bind every [data-key] input
   document.querySelectorAll('[data-key]').forEach((el) => {
@@ -227,12 +267,18 @@ export function settingsHtml(nonce: string, cspSource: string): string {
     });
   });
 
+  $('customMessages').addEventListener('change', () => {
+    const lines = $('customMessages').value.split('\\n').map((l) => l.trim()).filter(Boolean);
+    send('set', { key: 'customMessages', value: lines });
+  });
+  $('tryMsg').onclick = () => send('tryMessage');
+  $('trySound').onclick = () => send('trySound');
   $('installHooks').onclick = () => send('installHooks');
   $('uninstallHooks').onclick = () => send('uninstallHooks');
   $('test').onclick = () => send('test');
-  $('randomRadio').onchange = () => send('active', { name: '🎲 Random' });
+  $('randomRadio').onchange = () => send('active', { name: RANDOM });
   $('addSite').onclick = () => {
-    state.sites.push({ name: 'Site baru', url: 'https://', loginUrl: '' });
+    state.sites.push({ name: T.p_newSite, url: 'https://', loginUrl: '' });
     saveSites();
     render();
     const inputs = document.querySelectorAll('.site input[data-field=url]');
@@ -269,8 +315,7 @@ export function settingsHtml(nonce: string, cspSource: string): string {
   }));
 
   function fmtDate(ts) {
-    const d = new Date(ts);
-    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    return new Date(ts).toLocaleDateString(document.documentElement.lang, { day: 'numeric', month: 'short', year: 'numeric' });
   }
 
   function render() {
@@ -281,12 +326,17 @@ export function settingsHtml(nonce: string, cspSource: string): string {
       if (el.type === 'checkbox') el.checked = !!v;
       else el.value = v ?? '';
     });
+    $('customMessages').value = (c.customMessages || []).join('\\n');
 
     $('hookStatus').innerHTML = {
-      ok: '<span class="pill ok">✓ Hooks terpasang</span>',
-      outdated: '<span class="pill warn">Hooks versi lama — klik Install hooks lagi</span>',
-      none: '<span class="pill warn">Hooks belum terpasang</span>',
+      ok: '<span class="pill ok">' + esc(T.p_hooksOk) + '</span>',
+      outdated: '<span class="pill warn">' + esc(T.p_hooksOld) + '</span>',
+      none: '<span class="pill warn">' + esc(T.p_hooksNone) + '</span>',
     }[state.hooksStatus];
+    $('serverStatus').innerHTML = state.serverPort
+      ? '<span class="pill ok">' + esc(fill(T.p_listening, { port: state.serverPort })) + '</span>'
+      : '<span class="pill warn">' + esc(state.serverNote || '') + '</span>';
+    $('browserDetected').textContent = state.browser ? fill(T.p_using, { path: state.browser }) : T.p_noBrowser;
 
     const s = c.schedule || {};
     $('schEnabled').checked = !!s.enabled;
@@ -298,18 +348,12 @@ export function settingsHtml(nonce: string, cspSource: string): string {
     });
     $('schBody').style.opacity = s.enabled ? '1' : '.45';
     $('schStatus').innerHTML = !s.enabled
-      ? '<span class="pill ok">Selalu aktif</span>'
+      ? '<span class="pill ok">' + esc(T.p_always) + '</span>'
       : state.scheduleActiveNow
-        ? '<span class="pill ok">Sekarang: aktif</span>'
-        : '<span class="pill warn">Sekarang: 💤 di luar jadwal</span>';
-    $('serverStatus').innerHTML = state.serverPort
-      ? '<span class="pill ok">Listening 127.0.0.1:' + state.serverPort + '</span>'
-      : '<span class="pill warn">' + (state.serverNote || 'Server tidak jalan') + '</span>';
-    $('browserDetected').textContent = state.browser
-      ? 'Dipakai: ' + state.browser
-      : 'Chrome/Edge/Brave tidak ketemu — isi path di atas.';
+        ? '<span class="pill ok">' + esc(T.p_nowActive) + '</span>'
+        : '<span class="pill warn">' + esc(T.p_nowInactive) + '</span>';
 
-    $('randomRadio').checked = state.active === '🎲 Random';
+    $('randomRadio').checked = state.active === RANDOM;
 
     const wrap = $('sites');
     wrap.innerHTML = '';
@@ -320,22 +364,22 @@ export function settingsHtml(nonce: string, cspSource: string): string {
       div.className = 'site' + (isActive ? ' active' : '');
       div.innerHTML = \`
         <div class="top">
-          <input type="radio" name="active" \${isActive ? 'checked' : ''} title="Pakai site ini">
+          <input type="radio" name="active" \${isActive ? 'checked' : ''} title="\${esc(T.p_useSite)}">
           <input type="text" data-field="name">
           \${login
-            ? '<span class="pill ok">✓ login ' + fmtDate(login) + '</span>'
-            : '<span class="pill warn">belum login</span>'}
+            ? '<span class="pill ok">' + esc(fill(T.p_loggedIn, { date: fmtDate(login) })) + '</span>'
+            : '<span class="pill warn">' + esc(T.p_notLogged) + '</span>'}
         </div>
         <div class="grid">
-          <span class="muted">Feed URL</span><input type="text" data-field="url">
-          <span class="muted">Login URL</span><input type="text" data-field="loginUrl" placeholder="kosong = pakai Feed URL">
+          <span class="muted">\${esc(T.p_feedUrl)}</span><input type="text" data-field="url">
+          <span class="muted">\${esc(T.p_loginUrl)}</span><input type="text" data-field="loginUrl" placeholder="\${esc(T.p_loginUrlPh)}">
         </div>
         <div class="actions">
-          <button data-act="login">🔑 Login</button>
-          <button data-act="open" class="secondary">Buka sekarang</button>
-          <button data-act="logged" class="secondary">Tandai sudah login</button>
+          <button data-act="login">\${esc(T.p_login)}</button>
+          <button data-act="open" class="secondary">\${esc(T.p_openNow)}</button>
+          <button data-act="logged" class="secondary">\${esc(T.p_markLogged)}</button>
           <span style="flex:1"></span>
-          <button data-act="remove" class="danger" title="Hapus site">Hapus</button>
+          <button data-act="remove" class="danger">\${esc(T.p_remove)}</button>
         </div>\`;
       div.querySelectorAll('input[data-field]').forEach((inp) => {
         const field = inp.dataset.field;
@@ -364,6 +408,9 @@ export function settingsHtml(nonce: string, cspSource: string): string {
     if (e.data?.type === 'state') {
       state = e.data.state;
       render();
+    } else if (e.data?.type === 'preview') {
+      $('preview').textContent = e.data.text;
+      $('preview').style.display = 'block';
     }
   });
   send('ready');

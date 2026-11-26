@@ -2,6 +2,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, execFile, ChildProcess } from 'child_process';
 
+/** Play a WAV file without blocking. Best effort: silently does nothing if no player exists. */
+export function playSound(file: string) {
+  if (!fs.existsSync(file)) {
+    return;
+  }
+  if (process.platform === 'win32') {
+    const f = file.replace(/'/g, "''");
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(New-Object Media.SoundPlayer '${f}').PlaySync()`],
+      { windowsHide: true }, () => undefined);
+  } else if (process.platform === 'darwin') {
+    execFile('afplay', [file], () => undefined);
+  } else {
+    execFile('paplay', [file], (err) => { if (err) { execFile('aplay', ['-q', file], () => undefined); } });
+  }
+}
+
 /** Find a Chromium-based browser (needed for --app windows we can close). */
 export function findBrowser(custom: string): string | undefined {
   if (custom.trim()) {
@@ -61,27 +77,37 @@ export function launchBrowser(browser: string, profileDir: string, extraArgs: st
 }
 
 /**
- * Close every browser process that uses our profile dir (scroll window, login window,
- * and the case where a new window was handed off to an already-running instance).
+ * Close every browser window that uses our profile dir (scroll window, login window,
+ * and windows handed off to an already-running instance).
+ *
+ * Closes gracefully first so Chrome writes its cookies to disk. A force kill loses
+ * every cookie set since the last flush, which logs you out of sites. Only processes
+ * still alive after the grace period are force-killed.
  */
-export function killProfile(profileDir: string, proc?: ChildProcess): Promise<void> {
+export function closeProfile(profileDir: string, graceSeconds = 5): Promise<void> {
   return new Promise((resolve) => {
     if (process.platform === 'win32') {
-      if (proc?.pid && proc.exitCode === null) {
-        execFile('taskkill', ['/PID', String(proc.pid), '/T', '/F'], () => undefined);
-      }
       const needle = profileDir.replace(/'/g, "''");
-      const script =
-        `Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.Contains('${needle}') } | ` +
-        `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+      const script = `
+$n = '${needle}'
+$all = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.Contains($n) })
+if ($all.Count -eq 0) { exit 0 }
+$ids = $all | ForEach-Object { $_.ProcessId }
+# Main browser processes have no --type= flag; taskkill without /F sends WM_CLOSE (clean shutdown).
+$all | Where-Object { $_.CommandLine -notmatch '--type=' } | ForEach-Object { taskkill /PID $_.ProcessId 2>$null | Out-Null }
+for ($i = 0; $i -lt ${graceSeconds * 4}; $i++) {
+  Start-Sleep -Milliseconds 250
+  if (-not (Get-Process -Id $ids -ErrorAction SilentlyContinue)) { exit 0 }
+}
+Get-Process -Id $ids -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue`;
       execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true }, () =>
         resolve()
       );
     } else {
-      if (proc?.pid && proc.exitCode === null) {
-        try { process.kill(-proc.pid, 'SIGTERM'); } catch { /* already gone */ }
-      }
-      execFile('pkill', ['-f', '--', `--user-data-dir=${profileDir}`], () => resolve());
+      const pattern = `--user-data-dir=${profileDir}`;
+      execFile('pkill', ['-TERM', '-f', '--', pattern], () => {
+        setTimeout(() => execFile('pkill', ['-KILL', '-f', '--', pattern], () => resolve()), graceSeconds * 1000);
+      });
     }
   });
 }

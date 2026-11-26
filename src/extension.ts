@@ -5,8 +5,9 @@ import * as os from 'os';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { spawn, ChildProcess } from 'child_process';
-import { findBrowser, launchBrowser, killProfile, findCodeCli } from './browser';
+import { findBrowser, launchBrowser, closeProfile, findCodeCli, playSound } from './browser';
 import { settingsHtml } from './settingsHtml';
+import { Lang, MESSAGES, STRINGS, Strings, fill } from './i18n';
 
 interface Site {
   name: string;
@@ -37,6 +38,46 @@ let paused = false;
 const cfg = () => vscode.workspace.getConfiguration('timeToWork');
 const profileDir = () => path.join(ctx.globalStorageUri.fsPath, 'browser-profile');
 
+function lang(): Lang {
+  const l = cfg().get<string>('language', 'auto');
+  if (l === 'id' || l === 'en') {
+    return l;
+  }
+  return vscode.env.language.toLowerCase().startsWith('id') ? 'id' : 'en';
+}
+const t = (): Strings => STRINGS[lang()];
+
+// ---------------------------------------------------------------- messages + sound
+
+let lastMessage: string | undefined;
+
+function pickMessage(kind: 'done' | 'attention' | 'timeout', took: string): string {
+  const m = MESSAGES[lang()];
+  const style = cfg().get<string>('messageStyle', 'savage');
+  const custom = cfg().get<string[]>('customMessages', []).map((s) => String(s).trim()).filter(Boolean);
+  let pool: string[];
+  if (style === 'simple') {
+    pool = [kind === 'done' ? m.simple : kind === 'attention' ? m.simpleAttention : m.simpleTimeout];
+  } else if (kind === 'done') {
+    pool = style === 'custom' && custom.length > 0 ? custom : [...m.done, ...custom];
+  } else {
+    pool = m[kind];
+  }
+  // Never show the same message twice in a row.
+  const choices = pool.length > 1 ? pool.filter((p) => p !== lastMessage) : pool;
+  const pick = choices[Math.floor(Math.random() * choices.length)];
+  lastMessage = pick;
+  return fill(pick, { time: took });
+}
+
+function alarm() {
+  if (!cfg().get<boolean>('sound', false)) {
+    return;
+  }
+  const custom = cfg().get<string>('soundFile', '').trim();
+  playSound(custom || ctx.asAbsolutePath(path.join('media', 'alarm.wav')));
+}
+
 export function activate(context: vscode.ExtensionContext) {
   ctx = context;
 
@@ -55,7 +96,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('timeToWork.toggle', async () => {
       const next = !cfg().get<boolean>('enabled', true);
       await cfg().update('enabled', next, vscode.ConfigurationTarget.Global);
-      vscode.window.showInformationMessage(`Time to Work ${next ? 'aktif' : 'mati'}.`);
+      vscode.window.showInformationMessage(next ? t().toggleOn : t().toggleOff);
     }),
     vscode.commands.registerCommand('timeToWork.test', runTest),
     vscode.window.registerUriHandler({
@@ -68,6 +109,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('timeToWork.port')) {
         startServer();
+      }
+      if (e.affectsConfiguration('timeToWork.language')) {
+        renderSettingsHtml();
       }
       if (e.affectsConfiguration('timeToWork')) {
         updateStatus();
@@ -119,8 +163,8 @@ function startServer() {
   s.on('error', (err: NodeJS.ErrnoException) => {
     serverPort = undefined;
     serverNote = err.code === 'EADDRINUSE'
-      ? `Port ${port} dipakai window VS Code lain (popup tetap jalan dari sana)`
-      : `Server error: ${err.message}`;
+      ? fill(t().portInUse, { port })
+      : fill(t().serverError, { msg: err.message });
     updateStatus();
     pushSettingsState();
   });
@@ -177,13 +221,16 @@ function onStop(reason: StopReason) {
   const took = formatDuration(elapsed);
   switch (reason) {
     case 'done':
-      vscode.window.showInformationMessage(`${cfg().get<string>('notificationMessage')} (${took})`);
+      alarm();
+      vscode.window.showInformationMessage(pickMessage('done', took));
       break;
     case 'attention':
-      vscode.window.showWarningMessage(`⏰ Time to work! Claude butuh approval/input kamu (${took}).`);
+      alarm();
+      vscode.window.showWarningMessage(pickMessage('attention', took));
       break;
     case 'timeout':
-      vscode.window.showWarningMessage(`⏰ Udah ${took} scroll. Time to work! Cek Claude.`);
+      alarm();
+      vscode.window.showWarningMessage(pickMessage('timeout', took));
       break;
     case 'manual':
       break;
@@ -207,9 +254,9 @@ function onAttention() {
     bringBackToClaude();
   }
   const reopen = cfg().get<boolean>('reopenAfterApproval', true);
-  vscode.window.showWarningMessage(
-    `⏰ Claude butuh approval kamu.${reopen ? ' Window scroll dibuka lagi setelah kamu approve.' : ''}`
-  );
+  const took = formatDuration(Date.now() - startedAt);
+  alarm();
+  vscode.window.showWarningMessage(pickMessage('attention', took) + (reopen ? t().reopenSuffix : ''));
 }
 
 /** A tool finished after the permission prompt: Claude is working again. */
@@ -325,7 +372,7 @@ function openDistraction() {
   showTimer = undefined;
   const site = currentSite();
   if (!site) {
-    vscode.window.showWarningMessage('Time to Work: belum ada site. Buka Time to Work: Settings.');
+    vscode.window.showWarningMessage(t().noSites);
     return;
   }
   shown = true;
@@ -345,7 +392,7 @@ function closeDistraction() {
     p.dispose();
   }
   if (browserProc) {
-    killProfile(profileDir(), browserProc);
+    closeProfile(profileDir());
     browserProc = undefined;
   }
 }
@@ -353,9 +400,7 @@ function closeDistraction() {
 function getBrowserOrWarn(): string | undefined {
   const browser = findBrowser(cfg().get<string>('browserPath', ''));
   if (!browser) {
-    vscode.window.showWarningMessage(
-      'Time to Work: Chrome/Edge/Brave tidak ketemu. Isi path browser di Time to Work: Settings.'
-    );
+    vscode.window.showWarningMessage(t().noBrowser);
   }
   return browser;
 }
@@ -369,10 +414,10 @@ function openPopup(site: Site) {
   const h = cfg().get<number>('popupHeight', 820);
   try {
     const proc = launchBrowser(browser, profileDir(), [`--app=${site.url}`, `--window-size=${w},${h}`]);
-    proc.on('error', (e) => vscode.window.showErrorMessage(`Time to Work: gagal buka browser: ${e.message}`));
+    proc.on('error', (e) => vscode.window.showErrorMessage(fill(t().browserFail, { msg: e.message })));
     browserProc = proc;
   } catch (e) {
-    vscode.window.showErrorMessage(`Time to Work: gagal buka browser: ${(e as Error).message}`);
+    vscode.window.showErrorMessage(fill(t().browserFail, { msg: (e as Error).message }));
   }
 }
 
@@ -386,7 +431,7 @@ function openLogin(site: Site) {
   const opened = Date.now();
   try {
     const proc = launchBrowser(browser, profileDir(), ['--new-window', url, '--window-size=1100,850']);
-    proc.on('error', (e) => vscode.window.showErrorMessage(`Time to Work: gagal buka browser: ${e.message}`));
+    proc.on('error', (e) => vscode.window.showErrorMessage(fill(t().browserFail, { msg: e.message })));
     proc.on('exit', async () => {
       // A short-lived process means the window was handed to an already-running instance;
       // in that case the user can press "Tandai sudah login" in settings.
@@ -394,9 +439,9 @@ function openLogin(site: Site) {
         await markLoggedIn(site.name);
       }
     });
-    vscode.window.showInformationMessage(`Login ke ${site.name} di window browser, lalu tutup window-nya.`);
+    vscode.window.showInformationMessage(fill(t().loginHint, { site: site.name }));
   } catch (e) {
-    vscode.window.showErrorMessage(`Time to Work: gagal buka browser: ${(e as Error).message}`);
+    vscode.window.showErrorMessage(fill(t().browserFail, { msg: (e as Error).message }));
   }
 }
 
@@ -437,8 +482,7 @@ function openSettings() {
     vscode.ViewColumn.Active,
     { enableScripts: true, retainContextWhenHidden: true }
   );
-  const nonce = crypto.randomBytes(16).toString('base64');
-  settingsPanel.webview.html = settingsHtml(nonce, settingsPanel.webview.cspSource);
+  renderSettingsHtml();
   settingsPanel.onDidDispose(() => { settingsPanel = undefined; });
   settingsPanel.webview.onDidReceiveMessage(async (msg) => {
     const sites = getSites();
@@ -473,6 +517,14 @@ function openSettings() {
       case 'test':
         runTest();
         break;
+      case 'tryMessage':
+        settingsPanel?.webview.postMessage({ type: 'preview', text: pickMessage('done', '2m 13s') });
+        return;
+      case 'trySound': {
+        const custom = cfg().get<string>('soundFile', '').trim();
+        playSound(custom || ctx.asAbsolutePath(path.join('media', 'alarm.wav')));
+        return;
+      }
       case 'installHooks':
         await installHooks(false);
         break;
@@ -482,6 +534,15 @@ function openSettings() {
     }
     pushSettingsState();
   });
+}
+
+/** (Re)build the settings page in the current language; the page asks for state when ready. */
+function renderSettingsHtml() {
+  if (!settingsPanel) {
+    return;
+  }
+  const nonce = crypto.randomBytes(16).toString('base64');
+  settingsPanel.webview.html = settingsHtml(nonce, settingsPanel.webview.cspSource, t(), lang());
 }
 
 function sanitizeSites(raw: unknown): Site[] {
@@ -515,7 +576,11 @@ function pushSettingsState() {
         mode: c.get('mode'),
         showDelaySeconds: c.get('showDelaySeconds'),
         maxMinutes: c.get('maxMinutes'),
-        notificationMessage: c.get('notificationMessage'),
+        language: c.get('language'),
+        messageStyle: c.get('messageStyle'),
+        customMessages: c.get('customMessages'),
+        sound: c.get('sound'),
+        soundFile: c.get('soundFile'),
         popupWidth: c.get('popupWidth'),
         popupHeight: c.get('popupHeight'),
         browserPath: c.get('browserPath'),
@@ -538,9 +603,9 @@ async function pickSite() {
   const chosen = activeName();
   const items: vscode.QuickPickItem[] = [
     ...sites.map((s) => ({ label: s.name, description: s.url })),
-    { label: RANDOM, description: 'Pilih acak tiap kali' },
+    { label: RANDOM, description: t().randomDesc },
   ];
-  const pick = await vscode.window.showQuickPick(items, { placeHolder: `Sekarang: ${chosen ?? '-'}` });
+  const pick = await vscode.window.showQuickPick(items, { placeHolder: fill(t().pickCurrent, { name: chosen ?? "-" }) });
   if (pick) {
     await ctx.globalState.update('site', pick.label);
     updateStatus();
@@ -554,21 +619,21 @@ function updateStatus() {
   }
   const enabled = cfg().get<boolean>('enabled', true);
   if (!enabled) {
-    statusItem.text = '$(device-mobile) TTW: off';
+    statusItem.text = `$(device-mobile) ${t().statusOff}`;
   } else if (shown) {
-    statusItem.text = '$(device-mobile) Scroll time…';
+    statusItem.text = `$(device-mobile) ${t().statusScroll}`;
   } else if (paused) {
-    statusItem.text = '$(bell) Claude nunggu approval';
+    statusItem.text = `$(bell) ${t().statusApproval}`;
   } else if (startedAt !== undefined) {
-    statusItem.text = '$(sync~spin) Claude kerja…';
+    statusItem.text = `$(sync~spin) ${t().statusWorking}`;
   } else if (!scheduleActive()) {
-    statusItem.text = '$(device-mobile) TTW: 💤 di luar jadwal';
+    statusItem.text = `$(device-mobile) ${t().statusOffSchedule}`;
   } else {
     statusItem.text = `$(device-mobile) TTW: ${activeName() ?? '-'}`;
   }
   statusItem.tooltip = [
-    'Time to Work — klik untuk settings',
-    serverPort ? `Listening on 127.0.0.1:${serverPort}` : (serverNote ?? 'Server tidak jalan'),
+    t().tooltipTitle,
+    serverPort ? fill(t().listening, { port: serverPort }) : (serverNote ?? t().serverDown),
   ].join('\n');
 }
 
@@ -601,7 +666,7 @@ function readClaudeSettings(quiet = false): Json | undefined {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (e) {
     if (!quiet) {
-      vscode.window.showErrorMessage(`Time to Work: ${file} bukan JSON valid, tidak diubah. (${(e as Error).message})`);
+      vscode.window.showErrorMessage(fill(t().invalidJson, { file, msg: (e as Error).message }));
     }
     return undefined;
   }
@@ -657,11 +722,11 @@ async function installHooks(confirm: boolean) {
   const file = claudeSettingsPath();
   if (confirm) {
     const ok = await vscode.window.showInformationMessage(
-      `Tambah hooks Time to Work ke ${file}? (Backup disimpan sebagai settings.json.ttw-backup)`,
+      fill(t().installConfirm, { file }),
       { modal: true },
-      'Install'
+      t().installBtn
     );
-    if (ok !== 'Install') {
+    if (ok !== t().installBtn) {
       return;
     }
   }
@@ -684,9 +749,7 @@ async function installHooks(confirm: boolean) {
   add('Notification', 'attention', 'permission_prompt');
   add('PostToolUse', 'resume');
   writeClaudeSettings(settings);
-  vscode.window.showInformationMessage(
-    'Hooks terpasang. Mulai sesi Claude Code baru (atau reload window) supaya hooks dibaca.'
-  );
+  vscode.window.showInformationMessage(t().hooksInstalled);
 }
 
 async function uninstallHooks() {
@@ -696,5 +759,5 @@ async function uninstallHooks() {
   }
   stripOurHooks(settings);
   writeClaudeSettings(settings);
-  vscode.window.showInformationMessage('Hooks Time to Work dihapus dari ~/.claude/settings.json.');
+  vscode.window.showInformationMessage(t().hooksRemoved);
 }

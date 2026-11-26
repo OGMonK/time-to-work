@@ -41,6 +41,9 @@ Kalau Claude minta **approval** di tengah jalan, window ditutup dulu supaya Clau
 - 🗓️ **Jadwal**: pilih hari dan jam. Mode "hanya aktif di jam ini" (misalnya setelah jam kerja) atau "mati di jam ini" (misalnya jam kantor atau meeting). Ada preset 🌙 / 💼 / 🏖️.
 - ⚡ **Tidak ganggu jawaban cepat**: window hanya muncul kalau Claude masih kerja setelah N detik (default 5).
 - 🛑 **Batas aman**: window tertutup sendiri setelah 30 menit, untuk jaga-jaga kalau kamu menekan Esc di Claude.
+- 😈 **Pesan galak & random**: tiap kali beda, misalnya *"Claude kerja keras 3m 12s, kamu ngapain? Scroll doang. Ayo kerja!"*. Bisa ganti ke gaya kalem, atau tulis pesanmu sendiri.
+- 🔊 **Suara alarm** (opsional): "ding-ding" bawaan, atau file `.wav` milikmu.
+- 🌐 **2 bahasa**: Bahasa Indonesia & English, untuk pesan dan panel setting.
 - ⚙️ **Panel setting visual**: semua diatur dari UI, tidak perlu edit JSON.
 
 ## Kebutuhan
@@ -66,7 +69,7 @@ Buka halaman [**Releases**](https://github.com/OGMonK/time-to-work/releases/late
 **Cara B, lewat terminal:**
 
 ```bash
-code --install-extension time-to-work-0.2.0.vsix
+code --install-extension time-to-work-0.3.0.vsix
 ```
 
 Pakai Cursor? Ganti `code` dengan `cursor`.
@@ -94,7 +97,10 @@ Semua bisa diatur dari panel (klik status bar `TTW`), atau lewat `Settings` deng
 | Tampilkan di | Window kecil | `popup` (Chrome/Edge) atau `panel` di dalam VS Code (hanya URL embed) |
 | Tunggu sebelum buka | 5 detik | Jawaban cepat tidak membuka window |
 | Batas maksimum | 30 menit | Window ditutup paksa setelah ini |
-| Teks notifikasi | ⏰ Time to work! … | Ganti sesukamu |
+| Bahasa | Auto | `auto` (ikut bahasa VS Code), `id`, atau `en` |
+| Gaya pesan | 😈 Galak | `savage` (random galak + pesanmu), `simple` (kalem), `custom` (hanya pesanmu) |
+| Pesan sendiri | – | Satu per baris, `{time}` = lama Claude kerja |
+| Suara alarm | mati | Bunyi alarm saat waktunya kerja. File `.wav` sendiri juga bisa |
 | Ukuran window | 420 × 820 | Ukuran window scroll |
 | Browser | otomatis | Path ke Chrome/Edge/Brave kalau tidak terdeteksi |
 | Port hook | 47821 | Ganti kalau bentrok, lalu install ulang hooks |
@@ -136,6 +142,7 @@ Extension ini tidak mengirim data ke mana pun.
 - **Tekan Esc di Claude** = hook `Stop` tidak terkirim. Tutup lewat `Time to Work: Close Scroll Window Now`, atau tunggu batas maksimum.
 - **Windows kadang tidak mengizinkan app lain membawa window ke depan**, jadi ikon VS Code di taskbar hanya berkedip. Notifikasi tetap muncul.
 - Kalau window **login** masih terbuka saat Claude selesai, window itu ikut ditutup. Selesaikan login dulu.
+- Waktu login, **centang "Ingat saya / Remember me"** kalau ada. Site yang memakai *session cookie* (tanpa "ingat saya") akan logout setiap kali browser ditutup. Ini perilaku normal Chrome.
 - Kalau beberapa window VS Code terbuka, hanya satu yang memegang port. Window scroll tetap jalan normal.
 
 ## Update dari versi lama

@@ -2,7 +2,7 @@
   "name": "time-to-work",
   "displayName": "Time to Work",
   "description": "Opens a doomscroll window (YouTube Shorts, TikTok, Webtoon...) while Claude Code is working, then closes it and tells you it's time to work.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "ogmonk",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -190,10 +190,39 @@
           "type": "number",
           "default": 820
         },
-        "timeToWork.notificationMessage": {
+        "timeToWork.language": {
           "type": "string",
-          "default": "⏰ Time to work! Claude udah selesai.",
-          "description": "Message shown when Claude finishes."
+          "enum": ["auto", "id", "en"],
+          "enumDescriptions": ["Follow VS Code's display language", "Bahasa Indonesia", "English"],
+          "default": "auto",
+          "description": "Language for messages and the settings panel."
+        },
+        "timeToWork.messageStyle": {
+          "type": "string",
+          "enum": ["savage", "simple", "custom"],
+          "enumDescriptions": [
+            "Random savage messages (your custom messages are mixed in)",
+            "One calm message",
+            "Only your custom messages"
+          ],
+          "default": "savage",
+          "description": "How the 'time to work' notification talks to you."
+        },
+        "timeToWork.customMessages": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Your own 'time to work' messages. {time} = how long Claude worked."
+        },
+        "timeToWork.sound": {
+          "type": "boolean",
+          "default": false,
+          "description": "Play an alarm sound when it is time to work."
+        },
+        "timeToWork.soundFile": {
+          "type": "string",
+          "default": "",
+          "description": "Custom .wav file for the alarm. Empty = built-in alarm."
         }
       }
     }
